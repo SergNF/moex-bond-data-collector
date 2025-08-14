@@ -7,23 +7,37 @@ import sys
 from datetime import datetime
 
 # --- Configuration ---
-DEFAULT_CONFIG_FILE = 'moex_collector.conf'
+DEFAULT_CONFIG_FILE = 'config.conf'
+DEFAULT_SECRETS_FILE = 'secrets.conf' # Для согласованности, хотя не используется напрямую
 
-def load_config(config_file):
-    """Loads configuration from a file."""
-    if not os.path.exists(config_file):
-        print(f"Error: Configuration file '{config_file}' not found.")
-        sys.exit(1)
-
+def load_config(config_file=DEFAULT_CONFIG_FILE, secrets_file=DEFAULT_SECRETS_FILE):
+    """Loads configuration from main config and secrets files."""
     config = configparser.ConfigParser()
-    # Разрешить комментарии, начинающиеся с ';'
     config.optionxform = str # Сохранять регистр ключей
+
+    # 1. Загрузить основной файл конфигурации
+    if not os.path.exists(config_file):
+        print(f"Error: Main configuration file '{config_file}' not found.")
+        sys.exit(1)
+    print(f"Loading main config from: {config_file}")
     config.read(config_file)
 
-    required_sections = ['DATABASE', 'API', 'TABLES', 'TABLE_SCHEMA:bonds', 'TABLE_SCHEMA:quotas', 'TABLE_SCHEMA:coupons', 'TABLE_SCHEMA:amortizations', 'TABLE_SCHEMA:offers']
+    # 2. Загрузить файл с секретами (если он существует)
+    # table_manager.py не использует секреты напрямую, но может загрузить их
+    # если они содержат дополнительные настройки (например, schema)
+    if os.path.exists(secrets_file):
+        print(f"Loading secrets (for potential DB schema) from: {secrets_file}")
+        config.read(secrets_file)
+
+    # Проверка обязательных секций
+    required_sections = ['DATABASE', 'API', 'TABLES']
+    # Добавляем секции схем таблиц
+    for table_key in ['bonds', 'quotas', 'coupons', 'amortizations', 'offers']:
+        required_sections.append(f"TABLE_SCHEMA:{table_key}")
+
     for section in required_sections:
         if not config.has_section(section):
-             print(f"Error: Configuration section '[{section}]' not found in '{config_file}'.")
+             print(f"Error: Configuration section '[{section}]' not found.")
              sys.exit(1)
 
     return config
@@ -47,7 +61,13 @@ def parse_arguments():
         "--config",
         type=str,
         default=DEFAULT_CONFIG_FILE,
-        help=f"Path to the configuration file (default: {DEFAULT_CONFIG_FILE})."
+        help=f"Path to the main configuration file (default: {DEFAULT_CONFIG_FILE})."
+    )
+    parser.add_argument(
+        "--secrets",
+        type=str,
+        default=DEFAULT_SECRETS_FILE,
+        help=f"Path to the secrets configuration file (default: {DEFAULT_SECRETS_FILE})."
     )
     return parser.parse_args()
 
@@ -307,7 +327,7 @@ def gather_statistics(conn, table_key, config):
 # --- Main Logic ---
 def main():
     args = parse_arguments()
-    config = load_config(args.config)
+    config = load_config(args.config, args.secrets)
 
     conn = get_db_connection(config)
     if not conn:

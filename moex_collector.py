@@ -10,23 +10,37 @@ import sys
 
 
 # --- Configuration ---
-CONFIG_FILE = 'moex_collector.conf'
+CONFIG_FILE = 'config.conf'
+SECRETS_FILE = 'secrets.conf'
 
-def load_config(config_file):
-    """Loads configuration from a file."""
-    if not os.path.exists(config_file):
-        print(f"Error: Configuration file '{config_file}' not found.")
-        sys.exit(1)
-
+def load_config(config_file=CONFIG_FILE, secrets_file=SECRETS_FILE):
+    """Loads configuration from main config and secrets files."""
     config = configparser.ConfigParser()
-    # Разрешить комментарии, начинающиеся с ';'
     config.optionxform = str # Сохранять регистр ключей
+
+    # 1. Загрузить основной файл конфигурации
+    if not os.path.exists(config_file):
+        print(f"Error: Main configuration file '{config_file}' not found.")
+        sys.exit(1)
+    print(f"Loading main config from: {config_file}")
     config.read(config_file)
 
-    required_sections = ['DATABASE', 'API', 'TABLES', 'TABLE_SCHEMA:bonds', 'TABLE_SCHEMA:quotas', 'TABLE_SCHEMA:coupons', 'TABLE_SCHEMA:amortizations', 'TABLE_SCHEMA:offers']
+    # 2. Загрузить файл с секретами (если он существует)
+    if os.path.exists(secrets_file):
+        print(f"Loading secrets from: {secrets_file}")
+        config.read(secrets_file) # Загружаем секреты поверх основных настроек
+    else:
+        print(f"Warning: Secrets file '{secrets_file}' not found. Using defaults or environment variables if configured.")
+
+    # Проверка обязательных секций
+    required_sections = ['DATABASE', 'API', 'TABLES']
+    # Добавляем секции схем таблиц
+    for table_key in ['bonds', 'quotas', 'coupons', 'amortizations', 'offers']:
+        required_sections.append(f"TABLE_SCHEMA:{table_key}")
+
     for section in required_sections:
         if not config.has_section(section):
-             print(f"Error: Configuration section '[{section}]' not found in '{config_file}'.")
+             print(f"Error: Configuration section '[{section}]' not found.")
              sys.exit(1)
 
     return config
@@ -66,7 +80,13 @@ def parse_arguments():
         "--config",
         type=str,
         default=CONFIG_FILE,
-        help=f"Path to the configuration file (default: {CONFIG_FILE})."
+        help=f"Path to the main configuration file (default: {CONFIG_FILE})."
+    )
+    parser.add_argument(
+        "--secrets",
+        type=str,
+        default=SECRETS_FILE,
+        help=f"Path to the secrets configuration file (default: {SECRETS_FILE})."
     )
     return parser.parse_args()
 
@@ -127,6 +147,7 @@ def get_all_securities(config):
             break
 
         securities.extend(data['securities']['data'])
+        # Check pagination
         if 'securities.cursor' in data:
              cursor_data = data['securities.cursor']['data']
              if cursor_data and len(cursor_data) > 0:
@@ -137,7 +158,7 @@ def get_all_securities(config):
              else:
                  break
         else:
-            break
+            break # No cursor info, assume done
 
     return securities
 
@@ -206,11 +227,10 @@ def get_column_mapping(config, table_key):
     schema_section = f"TABLE_SCHEMA:{table_key}"
     if not config.has_section(schema_section):
         print(f"Warning: Configuration section '[{schema_section}]' not found.")
-        return {} # Return empty dict if section not found
+        return {}
 
     # Предполагаем, что имена ключей в конфиге - это имена столбцов в БД
     # API использует те же имена, что и ключи в конфиге (в верхнем регистре)
-    # Например, если в конфиге secid = VARCHAR(50), то имя в API тоже SECID
     mapping = {}
     for db_column_name in config.options(schema_section):
         api_column_name = db_column_name.upper() # Предположение об именах API
@@ -283,7 +303,7 @@ def insert_data_generic(conn, table_name, data, config, table_key):
 # --- Main Logic ---
 def main():
     args = parse_arguments()
-    config = load_config(args.config)
+    config = load_config(args.config, args.secrets)
 
     start_date, end_date = get_date_range(args)
     isin_list = get_isin_list(args, config)
