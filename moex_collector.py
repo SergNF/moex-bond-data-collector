@@ -147,7 +147,7 @@ def get_isin_list(args, config):
         return [isin.strip().upper() for isin in args.isin.split(',')]
     else:
         all_securities_data = get_all_securities(config)
-        if not all_securities_
+        if not all_securities_data:
              print("Failed to fetch list of all securities.")
              return []
         isins = []
@@ -326,7 +326,7 @@ def main():
                          print(f"No data found for ISIN {isin} or unexpected structure.")
             else:
                  securities_data = get_all_securities(config)
-                 if securities_
+                 if securities_data:
                      if 'securities' in securities_data and 'columns' in securities_data['securities'] and 'data' in securities_data['securities']:
                          insert_data_generic(conn, table_name, securities_data['securities'], config, args.table)
                      elif 'columns' in securities_data and 'data' in securities_data:
@@ -419,7 +419,7 @@ def main():
                          print(f"  No data or unexpected structure for page {params['start']}.")
 
                      has_more = False
-                     if data and f'{data_block}.cursor' in 
+                     if data and f'{data_block}.cursor' in data:
                          cursor_data = data[f'{data_block}.cursor']['data']
                          if cursor_data and len(cursor_data) > 0:
                              index, total, pagesize = cursor_data[0]
